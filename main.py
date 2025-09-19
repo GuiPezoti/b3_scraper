@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict
 
 from scrapers import fetch_earnings, fetch_daily_trades, fetch_open_interest, fetch_series, fetch_consolidated_trade_info, available_dates
+from csv import save_to_csv
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,19 +20,47 @@ scrapers = [
     ]
 
 async def single_scraper(session: aiohttp.ClientSession, scraper: Dict, date: str):
-    """Executa um scraper específico para uma data"""
+    """
+    Executa um scraper específico para uma data e lida com erros.
+
+    Args:
+        session (aiohttp.ClientSession): A sessão aiohttp para a requisição.
+        scraper (Dict): Um dicionário contendo o nome, a função scraper e o nome
+                        do arquivo a ser salvo.
+        date (str): A data no formato 'YYYY-MM-DD' para o scraping.
+
+    Returns:
+        Dict: Um dicionário com o status da execução, dados obtidos e
+              informações sobre o scraper e a data.
+    """
     try: 
         logger.info(f"Executando {scraper['name']} para {date}")
         scraped_data = await scraper["scraper"](session, date)
         logger.info(f"{scraper['name']} concluído para {date}")
-        #Scraped data é a informação obtida do site da B3
-        return scraped_data
+        return {
+            "scraper": scraper["name"], 
+            "date": date, 
+            "status": "success", 
+            "data": scraped_data,
+            "filename": scraper["filename"],
+            "error": None
+        }
     except Exception as e:
         logger.error(f"Erro em {scraper['name']} para {date}: {e}")
         return {"scraper": scraper["name"], "date": date, "status": "error", "error": str(e)}
 
 async def single_date(session: aiohttp.ClientSession, date: str, scrapers_list: List[Dict]) -> List[Dict]:
-    """Executa todos os scrapers para uma data específica em paralelo"""
+    """
+    Executa todos os scrapers de uma lista para uma data específica em paralelo.
+
+    Args:
+        session (aiohttp.ClientSession): A sessão aiohttp para as requisições.
+        date (str): A data no formato 'YYYY-MM-DD' para a execução dos scrapers.
+        scrapers_list (List[Dict]): Uma lista de dicionários de scrapers a serem executados.
+
+    Returns:
+        List[Dict]: Uma lista de dicionários contendo os resultados de cada scraper.
+    """
     logger.info(f"Iniciando scraping para {date}")
     tasks = [single_scraper(session, scraper, date) for scraper in scrapers_list]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -52,7 +81,19 @@ async def single_date(session: aiohttp.ClientSession, date: str, scrapers_list: 
 
 
 async def handler_available_dates_async(max_dates: int = 7) -> Dict:
-    """Handler assíncrono para múltiplas datas"""
+    """
+    Handler assíncrono principal que coordena o scraping para múltiplas datas.
+
+    Busca as datas úteis disponíveis e executa todos os scrapers para cada uma
+    dessas datas, respeitando um limite máximo de dias.
+
+    Args:
+        max_dates (int): O número máximo de datas a serem processadas.
+
+    Returns:
+        Dict: Um dicionário de resumo contendo o status da execução, as datas
+              processadas e os resultados de cada scraping.
+    """
     logger.info(f"Iniciando scraper para múltiplas datas...")
     
     connector = aiohttp.TCPConnector(limit=20, limit_per_host=10)
@@ -91,9 +132,17 @@ async def handler_available_dates_async(max_dates: int = 7) -> Dict:
     }
 
 async def main():
-    result = asyncio.run(handler_available_dates_async(max_dates=7))
+    """
+    Função principal que inicia a execução do scraping.
+
+    Coordena a execução do `handler_available_dates_async` e salva os resultados
+    em um arquivo CSV.
+    """
+    result = await handler_available_dates_async(max_dates=7)
+    save_stats = save_to_csv(result)
+    logger.info(f"Dados salvos: {save_stats}")
     logger.info("Execução finalizada")
     return result
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
