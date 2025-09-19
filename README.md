@@ -1,93 +1,183 @@
-# B3-scrapper
+# B3 Async Scraper
 
+Scraper assíncrono para coleta de dados públicos da B3 (Brasil Bolsa Balcão). O código trabalha apenas com alguns dos endpoints disponíveis e pode ser expandido. Novos scrapers podem ser adicionados a execução. 
+## Instalação
 
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.com/awesomepets/b3-scrapper.git
-git branch -M main
-git push -uf origin main
+```bash
+pip install aiohttp asyncio
 ```
 
-## Integrate with your tools
+## Estrutura do Projeto
 
-- [ ] [Set up project integrations](https://gitlab.com/awesomepets/b3-scrapper/-/settings/integrations)
+```
+├── main.py           # Script principal assíncrono
+├── scrapers.py       # Funções de scraping para cada endpoint
+├── formatters.py     # Formatadores de dados
+├── csv_saver.py      # Funções para salvar CSVs localmente
+└── aws_s3.py         # Funções de upload S3 (opcional)
+```
 
-## Collaborate with your team
+## Dados Coletados
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+O scraper coleta os seguintes tipos de dados da B3:
 
-## Test and Deploy
+| Scraper | Descrição | Endpoint |
+|---------|-----------|----------|
+| **Series** | Instrumentos consolidados | InstrumentsConsolidatedFile |
+| **Earnings** | Proventos e dividendos | ProventionCreditVariable |
+| **Open Interest** | Posições em aberto (D-1) | DerivativesOpenPositionFile |
+| **Consolidated Trades** | Negociações consolidadas | TradeInformationConsolidatedFile |
+| **Daily Trades** | Negociações diárias | tickercsv |
 
-Use the built-in continuous integration in GitLab.
+## Como Usar
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+### Execução Básica
+```bash
+python main.py
+```
 
-***
+Os dados serão automaticamente salvos na pasta `data/` organizados por data.
 
-# Editing this README
+### Configuração de Datas
+```python
+# No main.py, modificar o parâmetro max_dates:
+result = await handler_available_dates_async(max_dates=7)  # Últimas 7 datas
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+### Habilitando/Desabilitando Scrapers
+```python
+# No main.py, comentar scrapers não desejados:
+scrapers = [
+    {"name": "Series", "scraper": fetch_series, "bucket_name": "series-csvs", "filename": "series"},
+    # {"name": "Earnings", "scraper": fetch_earnings, "bucket_name": "earnings-csvs", "filename": "earnings"},  # Desabilitado
+    {"name": "Open interest", "scraper": fetch_open_interest, "bucket_name": "openinterests-csvs", "filename": "open_interest"},
+]
+```
 
-## Suggestions for a good README
+## Salvamento Automático de CSVs
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+### Estrutura de Diretórios Criada Automaticamente
+```
+data/
+├── 2024-09-18/
+│   ├── series-2024-09-18.csv
+│   ├── earnings-2024-09-18.csv
+│   ├── open_interest-2024-09-18.csv
+│   ├── consolidated_trades_info-2024-09-18.csv
+│   └── daily_trades-2024-09-18.csv (800MB)
+├── 2024-09-17/
+│   └── [mesmos arquivos...]
+└── 2024-09-16/
+    └── [mesmos arquivos...]
+```
 
-## Name
-Choose a self-explaining name for your project.
+### Personalizar Diretório de Salvamento
+```python
+# No main.py, modificar a chamada save_to_csv:
+save_stats = save_to_csv(result, base_dir="meus_dados_b3")
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+### Personalizar Nomes dos Arquivos
+```python
+# Modificar os nomes de arquivo na configuração dos scrapers:
+scrapers = [
+    {"name": "Open Interest", "scraper": fetch_open_interest, "bucket_name": "openinterests-csvs", "filename": "posicoes_abertas"},
+    {"name": "Daily Trades", "scraper": fetch_daily_trades, "bucket_name": "trades-csvs", "filename": "negociacoes_diarias"},
+    # Resultado: posicoes_abertas-2024-09-18.csv
+]
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+### Gerenciamento de Arquivos
+```python
+from csv_saver import list_saved_files, cleanup_old_files
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+# Listar arquivos salvos
+files = list_saved_files()
+print(f"Total: {files['total_files']} arquivos em {files['directories']} datas")
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+# Limpar arquivos antigos (manter apenas 30 dias)
+cleanup_stats = cleanup_old_files(keep_days=30)
+print(f"Removidos: {cleanup_stats['removed']} diretórios antigos")
+```
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+## Configurações Avançadas
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Limites de Conexão
+```python
+connector = aiohttp.TCPConnector(
+    limit=20,        # Máximo de conexões simultâneas
+    limit_per_host=10 # Máximo por host
+)
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+### Timeouts Otimizados por Tamanho de Arquivo
+```python
+# Para arquivos grandes (800MB - Daily Trades)
+timeout = aiohttp.ClientTimeout(total=600, sock_read=60)  # 10 min
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+# Para arquivos médios (50-100MB)
+timeout = aiohttp.ClientTimeout(total=300, sock_read=30)  # 5 min
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+# Para arquivos pequenos (<10MB)
+timeout = aiohttp.ClientTimeout(total=60)  # 1 min
+```
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+## Estrutura de Retorno
 
-## License
-For open source projects, say how it is licensed.
+```python
+{
+    "status": "completed",
+    "dates_processed": 7,
+    "results": [
+        [  # Resultados da data 1
+            {
+                "scraper": "Series",
+                "date": "2024-09-18",
+                "status": "success",
+                "data": b"dados_csv_series...",
+                "error": None
+            },
+            # ... outros scrapers
+        ],
+        # ... outras datas
+    ],
+    "summary": {
+        "total_success": 28,
+        "total_errors": 7
+    }
+}
+```
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## Tratamento de Erros
+
+### Logs Detalhados
+- **INFO**: Progresso de cada scraper
+- **ERROR**: Erros específicos com detalhes
+- **INFO**: Resumo final de sucessos/erros
+
+# Solução de Problemas
+
+### Erro de Timeout (Arquivos Grandes)
+```python
+# Aumentar timeout para Daily Trades (800MB)
+timeout = aiohttp.ClientTimeout(total=900, sock_read=120)  # 15 min
+```
+
+### Erro de Memória
+```python
+# Reduzir paralelismo para arquivos muito grandes
+connector = aiohttp.TCPConnector(limit=5, limit_per_host=2)
+```
+
+### Erro de Rate Limit
+```python
+# Adicionar delay entre datas
+import asyncio
+await asyncio.sleep(2)  # 2 segundos entre processamento de datas
+```
+
+### Arquivos Corrompidos
+- Verificar conectividade com B3
+- Reprocessar datas específicas
+- Verificar logs de erro detalhados
